@@ -20,6 +20,13 @@ uploaded_file = st.sidebar.file_uploader(
     "Upload CSV File for Analysis", type=["csv"]
 )
 
+
+@st.cache_data(show_spinner=False)
+def load_csv(file) -> pd.DataFrame:
+    """Cached CSV read — avoids re-parsing the file on every widget interaction."""
+    return pd.read_csv(file)
+
+
 # ---------------------------------------------------------
 # Helper: detect if a column is numerical or categorical
 # ---------------------------------------------------------
@@ -37,9 +44,9 @@ def is_numerical(series: pd.Series, unique_threshold: int = 10) -> bool:
 
 
 if uploaded_file is not None:
-    # Validate file: try reading it as CSV
+    # Validate file: try reading it as CSV (cached — instant on reruns)
     try:
-        df = pd.read_csv(uploaded_file)
+        df = load_csv(uploaded_file)
         if df.empty:
             st.error("The uploaded CSV file is empty. Please upload a valid dataset.")
             st.stop()
@@ -61,7 +68,7 @@ if uploaded_file is not None:
     st.header("Dataset Preview & Metadata")
 
     st.subheader("First 5 Rows:")
-    st.dataframe(df.head(), use_container_width=True)
+    st.dataframe(df.head(), width='stretch')
 
     st.subheader("Shape:")
     st.write(f"{df.shape[0]} rows, {df.shape[1]} columns")
@@ -69,21 +76,21 @@ if uploaded_file is not None:
     st.subheader("Column Data Types:")
     dtypes_df = df.dtypes.astype(str).reset_index()
     dtypes_df.columns = ["Column", "Data Type"]
-    st.dataframe(dtypes_df, use_container_width=True)
+    st.dataframe(dtypes_df, width='stretch')
 
     st.subheader("Missing Values per Column:")
     missing_df = pd.DataFrame({
         "Missing Count": df.isnull().sum(),
         "Missing %": (df.isnull().sum() / len(df) * 100).round(2)
     })
-    st.dataframe(missing_df, use_container_width=True)
+    st.dataframe(missing_df, width='stretch')
 
     st.subheader("Basic Statistical Summary (Numerical Attributes):")
     numeric_df = df.select_dtypes(include="number")
     if not numeric_df.empty:
         summary_df = numeric_df.agg(["mean", "median", "min", "max"]).T
         summary_df.columns = ["Mean", "Median", "Min", "Max"]
-        st.dataframe(summary_df, use_container_width=True)
+        st.dataframe(summary_df, width='stretch')
     else:
         st.info("No numerical columns found in this dataset.")
 
@@ -105,11 +112,21 @@ if uploaded_file is not None:
     else:
         st.subheader(f"Bar Chart of {selected_column}")
         value_counts = col_data.value_counts(dropna=True)
+        n_unique = len(value_counts)
+
+        MAX_CATEGORIES = 30
+        if n_unique > MAX_CATEGORIES:
+            st.warning(
+                f"'{selected_column}' has {n_unique} unique values, which is too many to "
+                f"plot clearly as a bar chart. Showing the top {MAX_CATEGORIES} most frequent values instead."
+            )
+            value_counts = value_counts.head(MAX_CATEGORIES)
+
         show_pct = st.checkbox("Show percentage instead of count", value=False)
 
         fig, ax = plt.subplots(figsize=(8, 4))
         if show_pct:
-            pct_values = (value_counts / value_counts.sum() * 100)
+            pct_values = (value_counts / col_data.dropna().shape[0] * 100)
             ax.bar(pct_values.index.astype(str), pct_values.values, color="salmon", edgecolor="black")
             ax.set_ylabel("Percentage (%)")
         else:
